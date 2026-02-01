@@ -1,42 +1,144 @@
 <div align="center">
-  
+
 # 🐬 Dolphin KURDISH TTS
 
 ### Free & Open-Source Kurdish Text-to-Speech  
 **By Heldn Hastyar Abdullah**
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python)](https://www.python.org)
 [![License](https://img.shields.io/badge/License-Attribution--Required-orange)](LICENSE)
-[![Gradio](https://img.shields.io/badge/Powered%20by-Gradio-FF4B4B?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTEyIDI0Yy41IDAgMS0uMiAxLjQtLjZsOC45LTguOWMuNC0uNC42LTEgLjYtMS41cy0uMi0xLjEtLjYtMS41TDEzLjYgMy42QzEzLjIgMy4yIDEyLjYgMyAxMiAzcy0xLjIuMi0xLjYuNkwzLjYgMTIuNGMtLjQuNC0uNiAxLS42IDEuNXMuMiAxLjEuNiAxLjVMMTIgMjMuNHoiLz48L3N2Zz4=)](https://gradio.app)
-[![Kurdish](https://img.shields.io/badge/Supports-Sorani%20%26%20Kurmanji-green?logo=unicode)]()
+[![Gradio](https://img.shields.io/badge/Powered%20by-Gradio-FF4B4B)](https://gradio.app)
+[![Kurdish](https://img.shields.io/badge/Supports-Sorani%20%26%20Kurmanji-green)]()
 
 <br>
 
-> **"Voice for every Kurdish word"**  
-> Convert any Kurdish text to natural-sounding speech — offline, unlimited, and free.
+> **“Voice for every Kurdish word”**  
+> Convert Kurdish text into natural-sounding speech — **offline, unlimited, and free**.
 
 </div>
 
 ![Dolphin KURDISH TTS Demo](demo.png)
+
+---
+
+## 🌟 About
+
+**Dolphin KURDISH TTS** is a free, open-source Text-to-Speech application designed specifically for the Kurdish language.  
+It supports **Sorani** and **Kurmanji** dialects with clean text processing, high-quality audio output, and an easy-to-use web interface.
+
+The goal is simple:  
+**Make Kurdish accessible, audible, and future-proof.**
+
 ---
 
 ## ✨ Features
 
 | Feature | Description |
-|--------|-------------|
-| **🗣️ Unlimited Text** | Process entire articles, poems, or stories (no character limits!) |
-| **🇰🇷 Full Kurdish Support** | Sorani (Arabic script) • Kurmanji (Arabic & Latin scripts) |
-| **🧹 Smart Text Cleaner** | Auto-fixes Arabic/Persian character mappings and number formatting |
-| **🎧 Professional Output** | WAV/MP3 audio + SRT subtitles + ZIP bundle for video editors |
-| **⚙️ Customizable Speech** | Adjust speed, pitch, and natural pauses |
-| **📁 File Upload** | Process `.txt` files directly |
-| **🔒 Offline Use** | Works without internet after first run |
+|------|------------|
+| 🗣️ **Unlimited Text** | Convert long articles, poems, books, or stories without limits |
+| 🇰🇷 **Full Kurdish Support** | Sorani (Arabic script) • Kurmanji (Arabic & Latin scripts) |
+| 🧹 **Smart Text Cleaner** | Fixes Arabic/Persian characters, numbers, and common typing issues |
+| 🎧 **Professional Output** | WAV / MP3 audio + SRT subtitles |
+| 🎬 **Video-Ready** | ZIP bundle (audio + subtitles) for editors |
+| ⚙️ **Speech Controls** | Speed, pitch, and natural pauses |
+| 📁 **File Upload** | Process `.txt` files directly |
+| 🔒 **Offline Mode** | Works without internet after first run |
 
 ---
 
+📖 How to Use
+🎛️ Studio Tab
+Enter text or upload a .txt file
+
+Choose dialect:
+
+Sorani – Central Kurdish (Arabic script)
+
+Kurmanji (Arabic) – Northern Kurdish (Arabic script)
+
+Kurmanji (Latin) – Northern Kurdish (Latin script)
+
+(Optional) Adjust speech settings:
+
+⏱️ Speed: 0.5x → 2.0x
+
+🔊 Pitch: -5 → +5
+
+⏸️ Pauses: Sentence spacing
+
+Click Generate Speech
+
+Download:
+
+🎧 Audio (WAV / MP3)
+
+📝 Subtitles (.srt)
+
+📦 ZIP bundle
+
+🧹 Text Cleaner Tab
+Automatically fixes:
+
+Broken Arabic/Persian characters
+
+ك → ک
+
+ي → ی
+
+Number formatting
+
+123 → ١٢٣
+
+Common Kurdish typing mistakes
+
+⚙️ Technical Details
+Model: Meta AI MMS-TTS (Massively Multilingual Speech)
+
+Audio Quality: 16 kHz
+
+RAM: 8 GB+ recommended for long texts
+
+MP3 Support: Requires FFmpeg (WAV works by default)
+
+Offline Mode: Models cached after first use
+
+🙏 Acknowledgements
+Meta AI — MMS-TTS models
+
+Hugging Face — model hosting
+
+Gradio — web interface
+
+The Kurdish language community ❤️
+
+⚖️ License & Attribution
+This project is free and open-source, but attribution is required.
+
+You must credit:
+
+“Dolphin KURDISH TTS by Heldn Hastyar Abdullah”
+
+Required in:
+
+Application UI
+
+Documentation
+
+Source code comments
+
+Promotional materials
+
+📄 See full terms in the LICENSE file.
+
+<div align="center">
+Made with 💙 for the Kurdish Nation
+بۆ گەلی کورد، بە زمانی کوردی
+</div>
+
 ## 🚀 Quick Start
 
-### Run Locally (Recommended)
+### ▶️ Run Locally (Recommended)
+
 ```bash
 # Clone the repository
 git clone https://github.com/heldn/dolphin-kurdish-tts.git
@@ -45,57 +147,6 @@ cd dolphin-kurdish-tts
 # Install dependencies
 pip install -r requirements.txt
 
-# Launch the app
+# Run the app
 python app.py
-
-📖 How to Use
-🎛️ Studio Tab
-Enter text or upload a .txt file
-Select dialect:
-Sorani: Central Kurdish (Arabic script)
-Kurmanji (Arabic): Northern Kurdish in Arabic script
-Kurmanji (Latin): Northern Kurdish in Latin script
-Adjust settings (optional):
-⏱️ Speed: 0.5x (slow) → 2.0x (fast)
-🔊 Pitch: -5 (deeper) → +5 (higher)
-⏸️ Pauses: Control natural breaks between sentences
-Click "Generate Speech"
-Download:
-Audio file (WAV/MP3)
-Subtitles (.srt)
-ZIP bundle (audio + subtitles)
-🧹 Text Cleaner Tab
-Fix messy text with:
-Broken Arabic/Persian characters (ك → ک, ي → ی)
-Number formatting (123 → ١٢٣)
-Common typing errors
-
-🙏 Acknowledgements
-Meta AI for MMS-TTS models
-Hugging Face for model hosting
-Gradio for the web interface
-The Kurdish language community ❤️
-
-<div align="center">
-
-Made with 💙 for the Kurdish Nation
-بۆ گەلی کورد، بە زمانی کوردی
-</div>
-
-⚙️ Technical Details
-Models: Meta AI's MMS-TTS (Massively Multilingual Speech)
-Audio Quality: 16kHz sampling rate
-Memory: 8GB+ RAM recommended for long texts
-MP3 Support: Requires FFmpeg (WAV always works)
-Offline Mode: Models cached after first use
-
-⚖️ License & Attribution
-Free to use, but attribution is required!
-This project is open-source under a custom license that requires you to credit the creator when reusing or redistributing:
-"Dolphin KURDISH TTS by Heldn Hastyar Abdullah"
-✅ You must include this attribution in:
-Application interfaces
-Documentation
-Source code comments
-Promotional materials
-📄 See full terms in LICENSE
+After launch, open the local Gradio link in your browser.
