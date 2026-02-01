@@ -1,0 +1,3 @@
+conda activate kurdish_tts
+python run_tts.py
+python app.py
