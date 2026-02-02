@@ -1,404 +1,414 @@
+import sys
+import os
+
+# 1. SETUP DIRECTORIES (Must happen before AI imports)
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_CACHE_DIR = os.path.join(BASE_DIR, "models_cache")
+os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+
+# Redirect all AI models to a local cache folder for portability
+os.environ["HF_HOME"] = MODEL_CACHE_DIR
+os.environ["TRANSFORMERS_CACHE"] = MODEL_CACHE_DIR
+os.environ["PYTHONHASHSEED"] = "0"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+# Force offline mode if models are already present
+if os.path.exists(os.path.join(MODEL_CACHE_DIR, "models--razhan--mms-tts-ckb")):
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    print("Status: Offline Mode Active (Using local models)")
+else:
+    print("Status: Online Mode (Will download models on first run)")
+
+import re
+import json
+import zipfile
+from datetime import datetime
+import logging
+
+# Handle console output
+print("====================================")
+print("   🐬 Dolphin KURDISH TTS 🐬")
+print("====================================")
+print("Status: Initializing AI Engine...")
+print(f"Model cache directory: {os.environ['HF_HOME']}")
+print("Note: First launch takes longer to unpack libraries.")
+print("------------------------------------")
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 import gradio as gr
 from transformers import VitsModel, AutoTokenizer
 import torch
 import numpy as np
-import os
-import re
-import json
-from datetime import datetime
 import librosa
 import soundfile as sf
 from pydub import AudioSegment
-import zipfile
 
 # --- CONFIGURATION ---
+OUTPUT_FOLDER_NAME = "audio_output"
+OUTPUT_FOLDER = os.path.join(BASE_DIR, OUTPUT_FOLDER_NAME)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
 MODELS = {
     "Sorani": "razhan/mms-tts-ckb",
+    "Sorani (Alternative)": "akam-ot/ckb-tts",
     "Kurmanji (Arabic Script)": "facebook/mms-tts-kmr-script_arabic",
     "Kurmanji (Latin Script)": "facebook/mms-tts-kmr-script_latin"
 }
 
-OUTPUT_FOLDER = "audio_output"
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+# --- TRANSLATIONS ---
+TRANSLATIONS = {
+    "English": {
+        "title": "🐬 Dolphin KURDISH TTS",
+        "author": "By Heldn Hastyar Abdullah",
+        "studio_tab": "🎛️ Studio",
+        "cleaner_tab": "🧹 Text Cleaner",
+        "about_tab": "ℹ️ About",
+        "dialect": "Dialect",
+        "upload_txt": "📄 Upload .txt file",
+        "unlimited_text": "✅ Supports unlimited text length!",
+        "input_placeholder": "Enter Kurdish text here...",
+        "input_label": "Input Kurdish Text",
+        "pauses_accordion": "⏸️ Natural Pauses",
+        "comma_pause": "Comma pause (seconds)",
+        "sentence_pause": "Sentence pause (seconds)",
+        "audio_settings": "⚙️ Audio Settings",
+        "speed": "Speed",
+        "pitch": "Pitch",
+        "export_mp3": "Export as MP3 (Smaller File)",
+        "generate_btn": "🔊 Generate Speech",
+        "audio_preview": "Audio Preview",
+        "audio_file": "Audio File",
+        "subtitles": "Subtitles (.srt)",
+        "zip_bundle": "📦 ZIP Bundle",
+        "clean_title": "### Fix broken Kurdish characters",
+        "clean_desc": "Paste messy text to normalize Kurdish letters and numbers.",
+        "original_text": "Original Text",
+        "clean_btn": "Clean Text",
+        "cleaned_text": "Cleaned Text",
+        "usage_tips": "### Usage Tips",
+        "tip_q": "- **Max quality**: Use proper Kurdish punctuation",
+        "tip_l": "- **Long texts**: Upload .txt files for best results",
+        "tip_s": "- **Sorani users**: Automatic character fixing enabled",
+        "tip_v": "- **Video creators**: Download ZIP bundle (audio + subtitles)",
+        "footer": "<strong>🐬 Dolphin KURDISH TTS</strong> • Created by <em>Heldn Hastyar Abdullah</em> • Free & Open Source",
+        "error_empty": "❌ Please enter some text!",
+        "error_clean_empty": "❌ Text became empty after cleaning!",
+        "error_process": "❌ Could not process text!"
+    },
+    "Kurdish": {
+        "title": "🐬 دۆڵفین بۆ گۆڕینی دەق بۆ دەنگ",
+        "author": "لەلایەن هێڵدن هەستیار عەبدوڵا",
+        "studio_tab": "🎛️ ستۆدیۆ",
+        "cleaner_tab": "🧹 چاکسازی دەق",
+        "about_tab": "ℹ️ دەربارە",
+        "dialect": "شێوەزار",
+        "upload_txt": "📄 بارکردنی فایلی .txt",
+        "unlimited_text": "✅ دەتوانی دەقی بێسنوور بنوسی!",
+        "input_label": "دەقی کوردی داخڵ بکە",
+        "input_placeholder": "دەقی کوردی لێرە بنوسە...",
+        "pauses_accordion": "⏸️ وەستانە سروشتییەکان",
+        "comma_pause": "وەستانی فاریزە (چرکە)",
+        "sentence_pause": "وەستانی خاڵ (چرکە)",
+        "audio_settings": "⚙️ ڕێکخستنی دەنگ",
+        "speed": "خێرایی",
+        "pitch": "تۆنی دەنگ",
+        "export_mp3": "هەناردەکردن بە MP3",
+        "generate_btn": "🔊 دروستکردنی دەنگ",
+        "audio_preview": "گوێگرتن",
+        "audio_file": "فایلی دەنگ",
+        "subtitles": "ژێرنووس (.srt)",
+        "zip_bundle": "📦 فایلی ZIP",
+        "clean_title": "### چاککردنی پیتە تێکچووەکان",
+        "clean_desc": "دەقی تێکچوو لێرە دابنێ بۆ ئەوەی پیت و ژمارەکانی ڕێکبخەیتەوە.",
+        "original_text": "دەقی سەرەکی",
+        "clean_btn": "ڕێکخستنی دەق",
+        "cleaned_text": "دەقی ڕێکخراو",
+        "usage_tips": "### ئامۆژگارییەکان",
+        "tip_q": "- **باشترین کوالێتی**: نیشانەکانی (، . ؟ !) بەکاربهێنە",
+        "tip_l": "- **دەقی درێژ**: فایلی .txt بەکاربهێنە",
+        "tip_s": "- **بۆ سۆرانی**: چاکسازی پیتەکان چالاککراوە",
+        "tip_v": "- **بۆ ڤیدیۆ**: فایلی ZIP دابەزێنە",
+        "footer": "<strong>دۆڵفین بۆ گۆڕینی دەق بۆ دەنگ</strong> • لەلایەن <em>هێڵدن هەستیار عەبدوڵا</em>",
+        "error_empty": "❌ تکایە دەقێک بنوسە!",
+        "error_clean_empty": "❌ دەقەکە خاڵییە!",
+        "error_process": "❌ کێشەیەک ڕوویدا!"
+    }
+}
+
 model_cache = {}
 
-# --- TEXT CLEANER (Kurdish-specific) ---
-def normalize_kurdish_text(text):
-    """Fixes common Kurdish/Arabic/Persian character mapping issues."""
+# --- TEXT CLEANER ---
+def normalize_kurdish_text(text: str) -> str:
+    if not text: return ""
+    text = text.replace('4', '٤').replace('5', '٥').replace('6', '٦')
+    text = text.replace('۴', '٤').replace('۵', '٥').replace('۶', '٦')
     eng_to_ku = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
     text = text.translate(eng_to_ku)
-    
     replacements = {
-        'ك': 'ک', 'ي': 'ی', 'ى': 'ی', 'ه': 'ه', 'ە': 'ە',
-        'ڇ': 'چ', 'گ': 'گ', 'ڵ': 'ڵ', 'ڕ': 'ڕ', 'ڤ': 'ڤ', 'ێ': 'ێ', 'ۆ': 'ۆ', 'ه‌': 'ه'
+        'ك': 'ک', 'ي': 'ی', 'ى': 'ی', 'ة': 'ە',
+        'ڇ': 'چ', 'ڤ': 'ڤ', 'ڥ': 'ڤ', 'ڦ': 'پ',
+        'ه‌': 'ە', 'ە‌': 'ە', 'ۆ': 'ۆ', 'ێ': 'ێ',
+        'ڕ': 'ڕ', 'ڵ': 'ڵ', '?': '؟', ',': '،', ';': '؛'
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
     return text
 
 def auto_punctuate(text):
-    if not text.strip():
-        return text
+    if not text.strip(): return text
     text = re.sub(r'([.؟!?،])(\S)', r'\1 \2', text)
     if not re.search(r'[.؟!]\s*$', text.strip()):
         text = text.rstrip() + '.'
     return text
 
-# --- SMART TEXT SPLITTER FOR KURDISH (FIXED) ---
 def split_into_chunks(text, max_chars=400):
-    """
-    Split text into chunks <= max_chars without breaking sentences.
-    Handles Kurdish punctuation: . ؟ ! 
-    """
-    # Clean up whitespace first
     text = re.sub(r'\s+', ' ', text.strip())
-    if not text:
-        return []
-    
-    if len(text) <= max_chars:
-        return [text]
-    
-    # Split by sentence endings (keep delimiters)
+    if len(text) <= max_chars: return [text]
     parts = re.split(r'([.؟!]+)', text)
     sentences = []
-    for i in range(0, len(parts) - 1, 2):
-        sent = parts[i] + parts[i + 1]
-        if sent.strip():
-            sentences.append(sent.strip())
-    if len(parts) % 2 == 1 and parts[-1].strip():
-        sentences.append(parts[-1].strip())
-    
-    # Fallback: if no sentence breaks found, split by words
-    if not sentences:
-        words = text.split()
-        temp = ""
-        for word in words:
-            if len(temp) + len(word) + 1 <= max_chars:
-                temp = temp + " " + word if temp else word
-            else:
-                if temp:
-                    sentences.append(temp)
-                temp = word
-        if temp:
-            sentences.append(temp)
-        return sentences if sentences else [text]
-    
-    # Build chunks
-    chunks = []
-    current_chunk = ""
-    
-    for sent in sentences:
-        # Skip empty sentences
-        if not sent.strip():
-            continue
-            
-        # If adding this sentence exceeds limit, finalize current chunk
-        if current_chunk and len(current_chunk) + len(sent) + 1 > max_chars:
-            chunks.append(current_chunk)
-            current_chunk = sent
-        else:
-            current_chunk = current_chunk + " " + sent if current_chunk else sent
-    
-    # Add last chunk
-    if current_chunk.strip():
-        chunks.append(current_chunk.strip())
-    
-    # Final safety: remove any empty chunks
-    chunks = [c for c in chunks if c.strip()]
-    
-    return chunks if chunks else [text]
+    for i in range(0, len(parts)-1, 2):
+        s = parts[i] + parts[i+1]
+        if s.strip(): sentences.append(s.strip())
+    if len(parts)%2==1 and parts[-1].strip(): sentences.append(parts[-1].strip())
+    chunks, current = [], ""
+    for s in sentences:
+        if current and len(current) + len(s) + 1 > max_chars:
+            chunks.append(current)
+            current = s
+        else: current = current + " " + s if current else s
+    if current: chunks.append(current)
+    return chunks
 
-# --- AUDIO ENGINE (Handles Long Texts) ---
+# --- AUDIO ENGINE ---
 def load_model(dialect_name):
-    if dialect_name in model_cache:
-        return model_cache[dialect_name]
+    if dialect_name in model_cache: return model_cache[dialect_name]
     try:
-        model = VitsModel.from_pretrained(MODELS[dialect_name])
-        tokenizer = AutoTokenizer.from_pretrained(MODELS[dialect_name])
+        logger.info(f"🚀 Loading model for {dialect_name}...")
+        try:
+            # First attempt: Try loading from local cache ONLY (true offline)
+            model = VitsModel.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=True)
+            tokenizer = AutoTokenizer.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=True)
+        except Exception as offline_err:
+            # Second attempt: If not in cache, download it
+            logger.info(f"📡 Model not found in local cache or checking for updates... ({dialect_name})")
+            model = VitsModel.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=False)
+            tokenizer = AutoTokenizer.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=False)
+            
         model_cache[dialect_name] = (model, tokenizer)
         return model, tokenizer
     except Exception as e:
-        return None, str(e)
+        error_msg = str(e)
+        if "incomplete metadata" in error_msg or "deserializing" in error_msg:
+            error_msg = "❌ Corrupted model file detected! Please delete the 'models_cache' folder and restart the app to redownload."
+        logger.error(f"Failed: {error_msg}")
+        return None, error_msg
 
-def format_timestamp(seconds):
-    millis = int((seconds % 1) * 1000)
-    seconds = int(seconds)
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    seconds = seconds % 60
-    return f"{hours:02}:{minutes:02}:{seconds:02},{millis:03}"
+def format_timestamp(s):
+    ms = int((s % 1) * 1000)
+    s = int(s)
+    return f"{s//3600:02}:{(s%3600)//60:02}:{s%60:02},{ms:03}"
 
-def generate_audio_engine(text, dialect, speed, pitch, use_mp3, pause_short, pause_long):
-    if len(text.strip()) == 0:
-        raise gr.Error("❌ Please enter some text!")
-    
-    # Clean & Fix Text
-    if "Sorani" in dialect: 
-        text = normalize_kurdish_text(text)
-    
-    if not re.search(r'[.؟!,،]', text[:50]):
-        text = auto_punctuate(text)
-    
-    # Ensure we have valid text after cleaning
-    text = text.strip()
-    if not text:
-        raise gr.Error("❌ Text became empty after cleaning!")
-    
-    # Load Model
-    model_obj = load_model(dialect)
-    if model_obj[0] is None:
-        raise gr.Error(f"Model Error: {model_obj[1]}")
-    model, tokenizer = model_obj
+def generate_audio_engine(text, dialect, speed, pitch, use_mp3, p_s, p_l):
+    if not text.strip(): raise gr.Error("Empty!")
+    text = normalize_kurdish_text(text)
+    if not re.search(r'[.؟!,،]', text[:50]): text = auto_punctuate(text)
+    m_obj = load_model(dialect)
+    if not m_obj[0]: raise gr.Error(str(m_obj[1]))
+    model, tok = m_obj
     sr = model.config.sampling_rate
-
-    # Split into manageable chunks
-    chunks = split_into_chunks(text, max_chars=400)
+    chunks = split_into_chunks(text.strip())
     
-    # Critical safety check
-    if not chunks:
-        raise gr.Error("❌ Could not process text - please check your input!")
+    aud_segs, srt_segs, cur_t = [], [], 0.0
+    for i, ch in enumerate(chunks):
+        parts = re.split(r'([.؟!:\n]+|\[p\]|\[s\])', ch)
+        ch_aud, ch_t = [], 0.0
+        for p in parts:
+            p = p.strip()
+            if not p: continue
+            if p == "[p]": 
+                ch_aud.append(np.zeros(int(sr*p_l))); ch_t+=p_l; continue
+            if p == "[s]" or re.match(r'^[.؟!:\n]+$', p):
+                ch_aud.append(np.zeros(int(sr*p_s))); ch_t+=p_s; continue
+            if len(p) < 2: continue
+            ins = tok(p, return_tensors="pt")
+            if ins['input_ids'].shape[-1] == 0: continue
+            with torch.no_grad(): out = model(**ins).waveform
+            seg = out.float().numpy().T.flatten()
+            if speed != 1.0: seg = librosa.effects.time_stretch(seg, rate=speed)
+            if pitch != 0: seg = librosa.effects.pitch_shift(seg, sr=sr, n_steps=pitch)
+            dur = len(seg)/sr
+            srt_segs.append(f"{len(srt_segs)+1}\n{format_timestamp(cur_t+ch_t)} --> {format_timestamp(cur_t+ch_t+dur)}\n{p}\n\n")
+            ch_aud.append(seg); ch_aud.append(np.zeros(int(sr*0.1))); ch_t += dur+0.1
+        if ch_aud:
+            aud_segs.append(np.concatenate(ch_aud))
+            cur_t += ch_t
+            if i < len(chunks)-1:
+                aud_segs.append(np.zeros(int(sr*p_l))); cur_t += p_l
+
+    if not aud_segs: return None, None, None, None
+    f_aud = np.concatenate(aud_segs)
     
-    print(f"Split text into {len(chunks)} chunks")
+    # Safety: Handle NaNs or Infinity
+    f_aud = np.nan_to_num(f_aud)
     
-    full_audio_segments = []
-    srt_entries = []
-    current_time = 0.0
-    silence_between_chunks = np.zeros(int(sr * pause_long))  # Natural pause between chunks
-
-    for i, chunk in enumerate(chunks):
-        print(f"Processing chunk {i+1}/{len(chunks)}")
-        
-        # Process chunk like before
-        parts = re.split(r'([.؟!:\n]+|\[p\]|\[s\])', chunk)
-        audio_segments = []
-        chunk_srt = []
-        chunk_time = 0.0
-        
-        silence_short_dur = np.zeros(int(sr * pause_short))
-        silence_long_dur = np.zeros(int(sr * pause_long))
-        silence_between_words = np.zeros(int(sr * 0.1))
-
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-            
-            if part == "[p]":
-                audio_segments.append(silence_long_dur)
-                chunk_time += pause_long
-                continue
-            if part == "[s]" or re.match(r'^[.؟!:\n]+$', part):
-                audio_segments.append(silence_short_dur)
-                chunk_time += pause_short
-                continue
-
-            inputs = tokenizer(part, return_tensors="pt")
-            with torch.no_grad():
-                output = model(**inputs).waveform
-            segment = output.float().numpy().T.flatten()
-
-            if speed != 1.0:
-                segment = librosa.effects.time_stretch(segment, rate=speed)
-            if pitch != 0:
-                segment = librosa.effects.pitch_shift(segment, sr=sr, n_steps=pitch)
-
-            duration = len(segment) / sr
-            start = format_timestamp(current_time + chunk_time)
-            end = format_timestamp(current_time + chunk_time + duration)
-            chunk_srt.append(f"{len(srt_entries)+len(chunk_srt)+1}\n{start} --> {end}\n{part}\n")
-            
-            audio_segments.append(segment)
-            audio_segments.append(silence_between_words)
-            chunk_time += duration + 0.1
-
-        if audio_segments:
-            chunk_audio = np.concatenate(audio_segments)
-            full_audio_segments.append(chunk_audio)
-            srt_entries.extend(chunk_srt)
-            current_time += chunk_time
-            
-            # Add natural pause between chunks (except after last chunk)
-            if i < len(chunks) - 1:
-                full_audio_segments.append(silence_between_chunks)
-                current_time += pause_long
-
-    if not full_audio_segments:
-        return None, None, None, None
-
-    full_audio = np.concatenate(full_audio_segments)
-    max_val = np.max(np.abs(full_audio))
-    if max_val > 0:
-        full_audio = full_audio / max_val
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    wav_path = f"{OUTPUT_FOLDER}/audio_{timestamp}.wav"
-    sf.write(wav_path, full_audio, sr)
+    mv = np.max(np.abs(f_aud))
+    if mv > 1e-6: # Prevent division by zero or near-zero
+        f_aud = (f_aud / mv * 32767).astype(np.int16)
+    else:
+        f_aud = f_aud.astype(np.int16)
     
-    final_audio_path = wav_path
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    w_p = os.path.join(OUTPUT_FOLDER, f"audio_{ts}.wav")
+    sf.write(w_p, f_aud, sr)
+    f_p = w_p
     if use_mp3:
-        mp3_path = f"{OUTPUT_FOLDER}/audio_{timestamp}.mp3"
+        m_p = w_p.replace(".wav", ".mp3")
         try:
-            sound = AudioSegment.from_wav(wav_path)
-            sound.export(mp3_path, format="mp3", bitrate="192k")
-            final_audio_path = mp3_path
-        except Exception as e:
-            print(f"MP3 conversion failed: {e}")
-    
-    srt_path = f"{OUTPUT_FOLDER}/audio_{timestamp}.srt"
-    with open(srt_path, "w", encoding="utf-8") as f:
-        f.writelines(srt_entries)
-    
-    zip_path = f"{OUTPUT_FOLDER}/audio_{timestamp}.zip"
-    with zipfile.ZipFile(zip_path, 'w') as zf:
-        zf.write(final_audio_path, os.path.basename(final_audio_path))
-        zf.write(srt_path, os.path.basename(srt_path))
+            AudioSegment.from_wav(w_p).export(m_p, format="mp3", bitrate="192k")
+            f_p = m_p
+        except: pass
+    s_p = w_p.replace(".wav", ".srt")
+    with open(s_p, "w", encoding="utf-8") as f: f.writelines(srt_segs)
+    z_p = w_p.replace(".wav", ".zip")
+    with zipfile.ZipFile(z_p, 'w') as z:
+        z.write(f_p, os.path.basename(f_p))
+        z.write(s_p, os.path.basename(s_p))
+    return (sr, f_aud), f_p, s_p, z_p
 
-    return (sr, full_audio), final_audio_path, srt_path, zip_path
+# --- UI LOGIC ---
+def ui_lang(l):
+    d = TRANSLATIONS[l]
+    return [
+        gr.update(value="# "+d["title"]), 
+        gr.update(label=d["dialect"]),
+        gr.update(label=d["upload_txt"]),
+        gr.update(value=d["unlimited_text"]),
+        gr.update(label=d["input_label"], placeholder=d["input_placeholder"]),
+        gr.update(label=d["pauses_accordion"]),
+        gr.update(label=d["comma_pause"]),
+        gr.update(label=d["sentence_pause"]),
+        gr.update(label=d["audio_settings"]),
+        gr.update(label=d["speed"]),
+        gr.update(label=d["pitch"]),
+        gr.update(label=d["export_mp3"]),
+        gr.update(value=d["generate_btn"]),
+        gr.update(label=d["audio_preview"]),
+        gr.update(label=d["audio_file"]),
+        gr.update(label=d["subtitles"]),
+        gr.update(label=d["zip_bundle"]),
+        gr.update(value=t["clean_title"]), # wait t is not defined, fixing to d
+        gr.update(value=d["clean_title"]),
+        gr.update(value=d["clean_desc"]),
+        gr.update(label=d["original_text"]),
+        gr.update(value=d["clean_btn"]),
+        gr.update(label=d["cleaned_text"]),
+        gr.update(value=d["usage_tips"]),
+        gr.update(value=d["tip_q"]),
+        gr.update(value=d["tip_l"]),
+        gr.update(value=d["tip_s"]),
+        gr.update(value=d["tip_v"]),
+        gr.update(value=d["footer"]),
+        gr.update(label=d["studio_tab"]),
+        gr.update(label=d["cleaner_tab"]),
+        gr.update(label=d["about_tab"])
+    ]
 
-# --- UI ---
+# Fixed typo in ui_lang (d vs t)
+def ui_lang_fixed(l):
+    d = TRANSLATIONS[l]
+    return [
+        gr.update(value="# "+d["title"]), 
+        gr.update(label=d["dialect"]),
+        gr.update(label=d["upload_txt"]),
+        gr.update(value=d["unlimited_text"]),
+        gr.update(label=d["input_label"], placeholder=d["input_placeholder"]),
+        gr.update(label=d["pauses_accordion"]),
+        gr.update(label=d["comma_pause"]),
+        gr.update(label=d["sentence_pause"]),
+        gr.update(label=d["audio_settings"]),
+        gr.update(label=d["speed"]),
+        gr.update(label=d["pitch"]),
+        gr.update(label=d["export_mp3"]),
+        gr.update(value=d["generate_btn"]),
+        gr.update(label=d["audio_preview"]),
+        gr.update(label=d["audio_file"]),
+        gr.update(label=d["subtitles"]),
+        gr.update(label=d["zip_bundle"]),
+        gr.update(value=d["clean_title"]),
+        gr.update(value=d["clean_desc"]),
+        gr.update(label=d["original_text"]),
+        gr.update(value=d["clean_btn"]),
+        gr.update(label=d["cleaned_text"]),
+        gr.update(value=d["usage_tips"]),
+        gr.update(value=d["tip_q"]),
+        gr.update(value=d["tip_l"]),
+        gr.update(value=d["tip_s"]),
+        gr.update(value=d["tip_v"]),
+        gr.update(value=d["footer"]),
+        gr.update(label=d["studio_tab"]),
+        gr.update(label=d["cleaner_tab"]),
+        gr.update(label=d["about_tab"])
+    ]
+
 theme = gr.themes.Soft(primary_hue="teal", neutral_hue="slate")
-
-import warnings
-warnings.filterwarnings("ignore", message=".*theme.*launch.*")
-
-with gr.Blocks(theme=theme, title="Dolphin KURDISH TTS") as demo:
-    gr.Markdown("# 🐬 Dolphin KURDISH TTS\n**By Heldn Hastyar Abdullah**")
+with gr.Blocks(title="Dolphin KURDISH TTS") as demo:
+    with gr.Row():
+        tit = gr.Markdown("# 🐬 Dolphin KURDISH TTS")
+        ls = gr.Radio(["Kurdish", "English"], value="English", label="Language / زمان")
     
-    with gr.Tabs():
-        # TAB 1: MAIN STUDIO
-        with gr.TabItem("🎛️ Studio"):
+    with gr.Tabs() as ts:
+        with gr.TabItem("🎛️ Studio", id=0) as t1:
             with gr.Row():
                 with gr.Column():
-                    dialect = gr.Dropdown(
-                        list(MODELS.keys()), 
-                        value="Sorani", 
-                        label="Dialect"
-                    )
-                    
-                    text_upload = gr.File(
-                        label="📄 Upload .txt file", 
-                        file_types=[".txt"], 
-                        type="filepath"
-                    )
-                    
-                    gr.Markdown("✅ Supports unlimited text length!")
-                    
-                    text_input = gr.Textbox(
-                        lines=10, 
-                        label="Input Kurdish Text", 
-                        rtl=True, 
-                        placeholder="دەقی کوردی لێرە بنوسە... (هەر چەند پیتێک بێت)"
-                    )
-                    
-                    with gr.Accordion("⏸️ Natural Pauses", open=False):
-                        pause_short = gr.Slider(0.2, 0.8, value=0.4, label="Comma pause (seconds)")
-                        pause_long = gr.Slider(0.8, 2.0, value=1.3, label="Sentence pause (seconds)")
-                    
-                    with gr.Accordion("⚙️ Audio Settings", open=True):
-                        speed = gr.Slider(0.5, 2.0, value=1.0, label="Speed")
-                        pitch = gr.Slider(-5, 5, value=0, step=1, label="Pitch")
-                        use_mp3 = gr.Checkbox(label="Export as MP3 (Smaller File)", value=False)
-                    
+                    dia = gr.Dropdown(list(MODELS.keys()), value="Sorani", label="Dialect")
+                    upl = gr.File(label="📄 Upload .txt file", file_types=[".txt"], type="filepath")
+                    lm = gr.Markdown("✅ Supports unlimited text length!")
+                    txt = gr.Textbox(lines=10, label="Input Kurdish Text", rtl=True, placeholder="Enter text...")
+                    with gr.Accordion("⏸️ Natural Pauses", open=False) as a1:
+                        ps = gr.Slider(0.2, 0.8, value=0.4, label="Comma pause")
+                        pl = gr.Slider(0.8, 2.0, value=1.3, label="Sentence pause")
+                    with gr.Accordion("⚙️ Audio Settings", open=True) as a2:
+                        sp = gr.Slider(0.5, 2.0, value=1.0, label="Speed")
+                        pt = gr.Slider(-5, 5, value=0, step=1, label="Pitch")
+                        mp3 = gr.Checkbox(label="Export as MP3", value=False)
                     btn = gr.Button("🔊 Generate Speech", variant="primary")
-                
                 with gr.Column():
-                    audio_out = gr.Audio(label="Audio Preview")
-                    file_out = gr.File(label="Audio File")
-                    srt_out = gr.File(label="Subtitles (.srt)")
-                    zip_out = gr.File(label="📦 ZIP Bundle")
-            
-            text_upload.change(
-                lambda f: open(f.name, encoding='utf-8').read() if f else "", 
-                inputs=text_upload, 
-                outputs=text_input
-            )
-            
-            btn.click(
-                generate_audio_engine,
-                inputs=[text_input, dialect, speed, pitch, use_mp3, pause_short, pause_long],
-                outputs=[audio_out, file_out, srt_out, zip_out],
-                show_progress=True
-            )
-
-        # TAB 2: TEXT CLEANER
-        with gr.TabItem("🧹 Text Cleaner"):
-            gr.Markdown("### Fix broken Kurdish characters\nPaste messy text to normalize Kurdish letters and numbers.")
-            raw_text = gr.Textbox(
-                lines=6, 
-                label="Original Text", 
-                rtl=True,
-                placeholder="دەقی ناخوازراو لێرە دابنێ..."
-            )
-            clean_btn = gr.Button("Clean Text", variant="secondary")
-            clean_text = gr.Textbox(
-                lines=6, 
-                label="Cleaned Text", 
-                rtl=True,
-                placeholder="دەقی ڕێکخراو ئەمەیە..."
-            )
-
-            clean_btn.click(
-                normalize_kurdish_text,
-                inputs=raw_text,
-                outputs=clean_text
-            )
+                    a_p = gr.Audio(label="Audio Preview")
+                    a_f = gr.File(label="Audio File")
+                    s_f = gr.File(label="Subtitles (.srt)")
+                    z_f = gr.File(label="📦 ZIP Bundle")
         
-        # TAB 3: ABOUT (Documentation - NOW LAST)
-        with gr.TabItem("ℹ️ About"):
-            gr.Markdown("""
-            # 🐬 Dolphin KURDISH TTS
+        with gr.TabItem("🧹 Text Cleaner", id=1) as t2:
+            c1 = gr.Markdown("### Fix broken Kurdish characters"); c2 = gr.Markdown("Paste messy text...")
+            raw = gr.Textbox(lines=6, label="Original Text", rtl=True)
+            cbtn = gr.Button("Clean Text", variant="secondary")
+            cout = gr.Textbox(lines=6, label="Cleaned Text", rtl=True)
             
-            **Created by:** Heldn Hastyar Abdullah  
-            **License:** Free & Open Source
-            
-            ### What is this?
-            A free tool to convert **Kurdish text to natural-sounding speech**.
-            
-            ### Attribution Required
-            This project is free to use and modify, but **you must credit "Heldn Hastyar Abdullah"** 
-            if you reuse this code or distribute the application.
-            
-            ### Supported Dialects
-            - **Sorani** (Central Kurdish - Arabic script)
-            - **Kurmanji** (Northern Kurdish - Arabic or Latin script)
-            
-            ### How to Use
-            1. Go to the **🎛️ Studio** tab
-            2. Enter your Kurdish text (or upload a `.txt` file)
-            3. Select your dialect
-            4. Adjust settings if needed (speed, pitch, pauses)
-            5. Click **"Generate Speech"**
-            6. Download your audio, subtitles, or ZIP bundle
-            
-            ### Text Cleaner
-            - Use the **🧹 Text Cleaner** tab to fix:
-              - Broken Arabic/Persian characters
-              - Number formatting issues
-              - Common typing errors
-            
-            ### Tips for Best Results
-            - Use proper Kurdish punctuation (، . ؟ !)
-            - For long texts: Upload `.txt` files instead of pasting
-            - Sorani dialect automatically fixes character mappings
-            - Use `[p]` for long pauses, `[s]` for short pauses
-            
-            ### Technical Notes
-            - **No internet required** after first run (models cached locally)
-            - **MP3 conversion** requires FFmpeg (WAV always works)
-            - Processing time: ~1 second per 100 characters
-            """)
+        with gr.TabItem("ℹ️ About", id=2) as t3:
+            gr.Markdown("# 🐬 Dolphin KURDISH TTS\nCreated by: Heldn Hastyar Abdullah")
 
-    gr.Markdown(
-        "### Usage Tips\n"
-        "- **Max quality**: Use proper Kurdish punctuation\n"
-        "- **Long texts**: Upload .txt files for best results\n"
-        "- **Sorani users**: Automatic character fixing enabled\n"
-        "- **Video creators**: Download ZIP bundle (audio + subtitles)\n\n"
-        "<div style='text-align: center; padding: 15px; background-color: #e6f7ff; border-radius: 8px;'>"
-        "<strong>🐬 Dolphin KURDISH TTS</strong> • Created by <em>Heldn Hastyar Abdullah</em> • "
-        "Free & Open Source (Attribution Required)"
-        "</div>"
-    )
+    ut = gr.Markdown("### Usage Tips")
+    m1 = gr.Markdown("- **Max quality**: Use punctuation"); m2 = gr.Markdown("- **Long texts**: Use .txt files")
+    m3 = gr.Markdown("- **Sorani**: Auto-fix enabled"); m4 = gr.Markdown("- **Video**: Download ZIP")
+    ft = gr.HTML("<div style='text-align: center; padding: 15px;'><strong>🐬 Dolphin KURDISH TTS</strong></div>")
+
+    ls.change(ui_lang_fixed, [ls], [tit, dia, upl, lm, txt, a1, ps, pl, a2, sp, pt, mp3, btn, a_p, a_f, s_f, z_f, c1, c2, raw, cbtn, cout, ut, m1, m2, m3, m4, ft, t1, t2, t3])
+    upl.change(lambda f: open(f.name, encoding='utf-8', errors='ignore').read() if f else "", [upl], [txt])
+    btn.click(generate_audio_engine, [txt, dia, sp, pt, mp3, ps, pl], [a_p, a_f, s_f, z_f])
+    cbtn.click(normalize_kurdish_text, [raw], [cout])
 
 if __name__ == "__main__":
-    demo.launch(inbrowser=True)
+    print("Status: Ready! Launching browser...")
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except:
+        pass
+    demo.launch(inbrowser=True, theme=theme)
