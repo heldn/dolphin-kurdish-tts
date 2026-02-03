@@ -20,3 +20,4 @@ safehttpx
 groovy
 kokoro>=0.7.0
 misaki[ja,zh]>=0.7.4
+num2words
