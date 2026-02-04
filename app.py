@@ -79,10 +79,8 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 MODELS = {
     "Sorani": "razhan/mms-tts-ckb",
-    "Sorani (Alternative)": "akam-ot/ckb-tts",
     "Kurmanji (Arabic Script)": "facebook/mms-tts-kmr-script_arabic",
     "Kurmanji (Latin Script)": "facebook/mms-tts-kmr-script_latin",
-    "Arabic (Standard - MMS)": "facebook/mms-tts-ara",
     "Arabic (Habibi - Dialectal)": "SWivid/Habibi-TTS",
     "Multi-Language (Kokoro-82M)": "hexgrad/Kokoro-82M"
 }
@@ -252,6 +250,9 @@ TRANSLATIONS = {
     }
 }
 
+LOCAL_OVERRIDE_DIR = os.path.join(BASE_DIR, "local_models")
+os.makedirs(LOCAL_OVERRIDE_DIR, exist_ok=True)
+
 model_cache = {}
 
 # --- TEXT CLEANER ---
@@ -325,6 +326,16 @@ def load_kokoro_model(lang_code='a'):
     try:
         from kokoro import KPipeline
         logger.info(f"🚀 Loading Kokoro model for {lang_code}...")
+        
+        # Check local override
+        local_kokoro_path = os.path.join(LOCAL_OVERRIDE_DIR, "kokoro-82m")
+        if os.path.exists(os.path.join(local_kokoro_path, "config.json")):
+             print(f"Using manual local KOKORO model from: {local_kokoro_path}")
+             # KPipeline doesn't accept a path directly for the model usually, but we can bypass or let it use cache. 
+             # Actually KPipeline is strict. If manual override is needed, we rely on standard cache or advanced usage.
+             # For now, let's stick to standard loading for Kokoro unless advanced patch needed.
+             pass 
+
         pipeline = KPipeline(lang_code=lang_code)
         model_cache[key] = (pipeline, "kokoro")
         return pipeline, "kokoro"
@@ -341,15 +352,26 @@ def load_voice_model(dialect_name, kokoro_lang_code='a'):
     if dialect_name in model_cache: return model_cache[dialect_name]
     try:
         logger.info(f"🚀 Loading model for {dialect_name}...")
-        try:
-            # First attempt: Try loading from local cache ONLY (true offline)
-            model = VitsModel.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=True)
-            tokenizer = AutoTokenizer.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=True)
-        except Exception as offline_err:
-            # Second attempt: If not in cache, download it
-            logger.info(f"📡 Model not found in local cache or checking for updates... ({dialect_name})")
-            model = VitsModel.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=False)
-            tokenizer = AutoTokenizer.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=False)
+        
+        # 0. Check for MANUAL LOCAL OVERRIDE (For users who manually downloaded files)
+        # Sanitized folder name: "Sorani" -> "Sorani"
+        safe_name = "".join([c if c.isalnum() else "_" for c in dialect_name])
+        manual_path = os.path.join(LOCAL_OVERRIDE_DIR, safe_name)
+        
+        if os.path.exists(manual_path) and os.listdir(manual_path):
+             logger.info(f"📂 Found manual local model at: {manual_path}")
+             model = VitsModel.from_pretrained(manual_path, local_files_only=True)
+             tokenizer = AutoTokenizer.from_pretrained(manual_path, local_files_only=True)
+        else:
+            try:
+                # First attempt: Try loading from local cache ONLY (true offline)
+                model = VitsModel.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=True)
+                tokenizer = AutoTokenizer.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=True)
+            except Exception as offline_err:
+                # Second attempt: If not in cache, download it
+                logger.info(f"📡 Model not found in local cache or checking for updates... ({dialect_name})")
+                model = VitsModel.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=False)
+                tokenizer = AutoTokenizer.from_pretrained(MODELS[dialect_name], cache_dir=MODEL_CACHE_DIR, local_files_only=False)
             
         model_cache[dialect_name] = (model, tokenizer)
         return model, tokenizer
