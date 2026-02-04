@@ -16,12 +16,12 @@ os.environ["TRANSFORMERS_CACHE"] = MODEL_CACHE_DIR
 os.environ["PYTHONHASHSEED"] = "0"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
-# Force offline mode if models are already present
-if os.path.exists(os.path.join(MODEL_CACHE_DIR, "models--razhan--mms-tts-ckb")):
+# Force offline mode ONLY if running as a packaged executable
+if getattr(sys, 'frozen', False):
     os.environ["HF_HUB_OFFLINE"] = "1"
-    print("Status: Offline Mode Active (Using local models)")
+    print("Status: Offline Mode Active (Packaged Version)")
 else:
-    print("Status: Online Mode (Will download models on first run)")
+    print("Status: Online/Cache Mode (Development - Can download models)")
 
 import re
 import json
@@ -49,6 +49,28 @@ import numpy as np
 import librosa
 import soundfile as sf
 from pydub import AudioSegment
+
+# Force torchaudio to use soundfile backend to avoid torchcodec/ffmpeg issues on Windows
+# Force torchaudio to use soundfile backend to avoid torchcodec/ffmpeg issues on Windows
+try:
+    import torchaudio
+    # Monkey patch load to DIRECTLY use soundfile, bypassing torchaudio's internal dispatch completely
+    # This fixes the "libtorchcodec" crash on Windows by avoiding the broken default backend
+    def safe_load(filepath, **kwargs):
+        # Ignore extra kwargs like 'backend' since we assume soundfile
+        data, samplerate = sf.read(filepath)
+        # Convert numpy array to torch tensor (channels, frames)
+        if data.ndim == 1:
+            tensor = torch.tensor(data).float().unsqueeze(0) 
+        else:
+            # soundfile is (frames, channels), torchaudio expects (channels, frames)
+            tensor = torch.tensor(data).float().transpose(0, 1)
+        return tensor, samplerate
+
+    torchaudio.load = safe_load
+    print("Force-patched torchaudio.load to use direct soundfile wrapper.")
+except Exception as e:
+    print(f"Warning: Could not patch torchaudio backend: {e}")
 
 # --- CONFIGURATION ---
 OUTPUT_FOLDER_NAME = "audio_output"
@@ -348,6 +370,10 @@ def generate_audio_engine(text, dialect, speed, pitch, use_mp3, p_s, p_l, habibi
     text = normalize_kurdish_text(text)
     if not re.search(r'[.؟!,،]', text[:50]): text = auto_punctuate(text)
     
+    # Map full language name to code for Kokoro
+    if kokoro_lang in KOKORO_LANGS:
+        kokoro_lang = KOKORO_LANGS[kokoro_lang]
+
     m_obj = load_voice_model(dialect, kokoro_lang)
     if not m_obj[0]: raise gr.Error(str(m_obj[1]))
     
@@ -364,9 +390,34 @@ def generate_audio_engine(text, dialect, speed, pitch, use_mp3, p_s, p_l, habibi
             if not habibi_ref_wav:
                 # Use bundled asset as fallback
                 from importlib.resources import files
-                habibi_ref_wav = str(files("habibi_tts").joinpath(f"assets/{habibi_dialect if habibi_dialect != 'OMN' else 'MSA'}.mp3"))
+                # Use bundled asset as fallback
+                from importlib.resources import files
+                
+                # Check for MSA or specific dialect file
+                ref_file_name = f"{habibi_dialect}.mp3" if habibi_dialect != 'OMN' else "MSA.mp3"
+                
+                try:
+                    # Try to locate the file in the package
+                    pkg_path = files("habibi_tts").joinpath(f"assets/{ref_file_name}")
+                    habibi_ref_wav = str(pkg_path)
+                    
+                    # Verify existence, fallback to MSA if missing
+                    if not os.path.exists(habibi_ref_wav):
+                        logger.warning(f"Dialect reference {habibi_ref_wav} not found. Fallback to MSA.")
+                        habibi_ref_wav = str(files("habibi_tts").joinpath("assets/MSA.mp3"))
+                        
+                    if not os.path.exists(habibi_ref_wav):
+                         # If even MSA is missing, use a safe default from the main repo or error gracefully
+                         raise FileNotFoundError(f"Could not find any reference audio in {habibi_ref_wav}")
+
+                except Exception as ex:
+                     logger.warning(f"Could not load bundled asset: {ex}. Please upload a reference audio.")
+                     if not habibi_ref_wav: raise gr.Error("Please upload a reference audio file for voice cloning.")
+
                 if habibi_dialect == "MSA" or not habibi_ref_txt:
                     habibi_ref_txt = "كان اللعيب حاضرًا في العديد من الأنشطة والفعاليات المرتبطة بكأس العالم."
+            
+            logger.info(f"Using reference audio: {habibi_ref_wav}")
             
             ref_audio, ref_text = preprocess_ref_audio_text(habibi_ref_wav, habibi_ref_txt)
             dialect_id = dialect_id_map.get(habibi_dialect[:3], None)
