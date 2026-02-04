@@ -1,7 +1,21 @@
+# 1. SETUP DIRECTORIES (Must happen before AI imports)
 import sys
 import os
+import importlib.metadata
 
-# 1. SETUP DIRECTORIES (Must happen before AI imports)
+# --- PATCH: Fix for 'torchcodec' metadata crash in packaged version ---
+# Transformers 4.48.0+ attempts to check torchcodec version at module level
+# which crashes in frozen/offline environments if metadata isn't found.
+_original_version = importlib.metadata.version
+
+def _patched_version(distribution_name):
+    if distribution_name == "torchcodec":
+        return "0.0.0" # Dummy version to prevent PackageNotFoundError crash
+    return _original_version(distribution_name)
+
+importlib.metadata.version = _patched_version
+# ----------------------------------------------------------------------
+
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
@@ -27,7 +41,7 @@ import re
 import json
 import zipfile
 from datetime import datetime
-import logging
+import logging 
 
 # Handle console output
 print("====================================")
@@ -574,7 +588,7 @@ def ui_lang_fixed(l):
     ]
 
 theme = gr.themes.Soft(primary_hue="teal", neutral_hue="slate")
-with gr.Blocks(title="Dolphin KURDISH TTS") as demo:
+with gr.Blocks(title="Dolphin KURDISH TTS", theme=theme) as demo:
     with gr.Row():
         tit = gr.Markdown("# 🐬 Dolphin KURDISH TTS")
         ls = gr.Radio(["Kurdish", "English", "Arabic"], value="English", label="Language / زمان / اللغة")
@@ -655,4 +669,4 @@ if __name__ == "__main__":
         pyi_splash.close()
     except:
         pass
-    demo.launch(inbrowser=True, theme=theme)
+    demo.launch(inbrowser=True)

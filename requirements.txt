@@ -15,7 +15,6 @@ einops
 accelerate
 cached-path
 python-dotenv
-pyi-splash
 safehttpx
 groovy
 kokoro>=0.7.0
